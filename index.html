@@ -1,0 +1,1196 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>MINISheets</title>
+
+<!-- Inter font -->
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
+
+<!-- favicon / logo -->
+<link rel="icon" href="https://res.cloudinary.com/dk0f2y0hu/image/upload/v1754741669/MINIApps/MINISheets_xnbcui.png" />
+
+<!-- SheetJS for import (xlsx, xls, ods) -->
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.19.2/dist/xlsx.full.min.js"></script>
+
+<style>
+:root{
+  --bg: #f4f6f5;
+  --panel: #ffffff;
+  --muted: #8b948e;
+  --accent: #74BA6C; /* main green */
+  --cell-border: #e6e9e6;
+  --header-bg: #f0f3f0;
+  --cell-size: 30px;
+  font-family: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0;background:var(--bg);color:#222;font-family:Inter,system-ui,Arial; -webkit-font-smoothing:antialiased;}
+.app{height:100vh;display:flex;flex-direction:column;gap:10px;padding:12px;position:relative}
+
+/* Toolbar: removed border around top menu per request */
+.toolbar{
+  display:flex;align-items:center;gap:12px;background:var(--panel);padding:8px;border-radius:10px;
+  /* border removed intentionally */ box-shadow:0 1px 0 rgba(0,0,0,0.02)
+}
+.brand{
+  display:flex;align-items:center;gap:8px;font-weight:700;font-size:16px;color:#123;
+}
+.brand img{width:28px;height:28px;border-radius:6px}
+.menus{display:flex;gap:8px;align-items:center;margin-left:12px}
+.menu{position:relative;}
+.menu button.menu-btn{
+  background:var(--panel);border:1px solid transparent;padding:8px 12px;border-radius:10px;cursor:pointer;
+  font-weight:600;color:#123;display:flex;align-items:center;gap:8px;
+}
+.menu button.menu-btn:hover{background:rgba(0,0,0,0.03)}
+.menu .dropdown{
+  position:absolute;top:calc(100% + 8px);left:0;background:#fff;border:1px solid var(--cell-border);
+  box-shadow:0 8px 24px rgba(15,20,15,0.08);border-radius:10px;padding:8px;display:none;min-width:220px;z-index:30
+}
+.menu .dropdown button{display:flex;align-items:center;gap:8px;width:100%;text-align:left;padding:8px 10px;border-radius:8px;border:none;background:transparent;cursor:pointer}
+.menu .dropdown button .menu-icon{width:18px;height:18px;flex:0 0 18px}
+.menu .dropdown button:hover{background:var(--header-bg)}
+.toolbar .actions{margin-left:auto;display:flex;gap:8px;align-items:center}
+.btn{
+  background:var(--accent);color:#fff;border:none;padding:8px 12px;border-radius:10px;cursor:pointer;font-weight:600;
+  box-shadow:0 6px 16px rgba(116,186,108,0.12);
+}
+.btn.ghost{background:transparent;color:var(--accent);border:1px solid rgba(116,186,108,0.12)}
+.icon-btn{width:36px;height:36px;padding:6px;border-radius:10px;display:inline-flex;align-items:center;justify-content:center}
+
+/* Formula bar - border removed (as requested) */
+.formula-bar{
+  display:flex;gap:8px;align-items:center;background:transparent;padding:0;border-radius:10px; /* removed border */
+  /* keep some spacing from toolbar */
+}
+.formula-label{font-weight:600;color:var(--muted);width:70px;padding-left:4px}
+.formula-input{
+  flex:1;padding:8px;border-radius:8px;border:0;outline:none;font-family:Inter;background:transparent;
+  /* subtle inner look with minimal divider (but no border) */
+  box-shadow: inset 0 -1px 0 rgba(0,0,0,0.04);
+}
+.formula-suggestions{position:absolute;background:#fff;border:1px solid var(--cell-border);border-radius:8px;overflow:hidden;display:none;z-index:40;min-width:200px}
+.formula-suggestions div{padding:6px 10px;cursor:pointer}
+.formula-suggestions div:hover{background:var(--header-bg)}
+
+/* sheet area */
+.sheet-wrap{flex:1;display:flex;overflow:hidden;border-radius:10px;background:var(--panel);border:1px solid var(--cell-border)}
+.row-headers{width:56px;background:var(--header-bg);border-right:1px solid var(--cell-border);overflow:auto}
+.col-headers{height:var(--cell-size);background:var(--header-bg);border-bottom:1px solid var(--cell-border);overflow:hidden}
+.grid-viewport{flex:1;overflow:auto;position:relative;background:#fff;scroll-behavior:smooth;overscroll-behavior:contain}
+
+/* headers */
+.header-cell{height:var(--cell-size);line-height:var(--cell-size);display:flex;align-items:center;justify-content:center;border-right:1px solid var(--cell-border);border-bottom:1px solid var(--cell-border);font-weight:600;color:#333}
+
+/* cells */
+/* cursor set to crosshair (classic Excel +) */
+.cells{position:relative;min-width:100%;min-height:100%}
+.cell{position:absolute;box-sizing:border-box;border-right:1px solid var(--cell-border);border-bottom:1px solid var(--cell-border);padding:6px 8px;height:var(--cell-size);line-height:18px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;font-size:13px;cursor:crosshair}
+.cell.selected{outline:2px solid var(--accent);z-index:3;background:rgba(116,186,108,0.04)}
+.cell.editing{background:#fff;z-index:4}
+.cell img{max-width:100%;max-height:100%;object-fit:contain;border-radius:4px}
+.cell a{color:inherit;text-decoration:underline}
+
+/* context menu */
+.context-menu{
+  position:fixed;z-index:9999;background:#fff;border:1px solid var(--cell-border);box-shadow:0 8px 24px rgba(10,15,10,0.08);
+  border-radius:10px;padding:6px;display:none;min-width:160px
+}
+.context-menu button{display:flex;align-items:center;gap:8px;width:100%;text-align:left;background:transparent;border:none;padding:8px 10px;border-radius:8px;cursor:pointer}
+.context-menu button:hover{background:var(--header-bg)}
+.context-menu img.menu-icon{width:16px;height:16px}
+
+/* modal */
+.modal-backdrop{position:fixed;inset:0;background:rgba(0,0,0,0.36);display:none;align-items:center;justify-content:center;z-index:10000}
+.modal{background:var(--panel);padding:18px;border-radius:12px;width:520px;max-width:94%}
+.dropzone{border:2px dashed rgba(116,186,108,0.35);padding:18px;border-radius:10px;text-align:center;background:#fbfff9;cursor:pointer}
+.dropzone.drag{background:#f3fff0;border-color:var(--accent)}
+.func-list{max-height:360px;overflow:auto;font-size:14px}
+.func-list li{margin:6px 0}
+
+/* Save toast */
+.save-toast{position:fixed;top:18px;right:18px;background:rgba(255,255,255,0.98);border:1px solid var(--cell-border);padding:8px 10px;border-radius:12px;display:flex;align-items:center;gap:8px;box-shadow:0 8px 22px rgba(0,0,0,0.08);z-index:120}
+.save-toast img{width:18px;height:18px}
+.save-toast.hidden{display:none}
+
+/* delete submenu */
+.delete-submenu{position:absolute;background:#fff;border:1px solid var(--cell-border);border-radius:8px;padding:8px;display:none;box-shadow:0 8px 20px rgba(0,0,0,0.08);z-index:60}
+.delete-submenu button{display:block;width:100%;text-align:left;padding:8px;border:none;background:transparent;border-radius:6px;cursor:pointer}
+.delete-submenu button:hover{background:var(--header-bg)}
+
+/* export modal */
+.export-modal .modal { max-width:420px; }
+.field { display:flex;flex-direction:column;gap:6px;margin-top:8px }
+.field input { padding:8px;border-radius:8px;border:1px solid var(--cell-border); outline:none; font-family:Inter }
+
+/* footer links in functions modal - inherit color but underlined */
+.func-footer{display:flex;gap:12px;justify-content:center;margin-top:12px;font-size:13px;color:inherit}
+.func-footer a{color:inherit;text-decoration:underline}
+
+/* multi-selection visual helper (optional) */
+.selection-rect {
+  position: absolute;
+  border: 1px dashed rgba(116,186,108,0.6);
+  background: rgba(116,186,108,0.04);
+  pointer-events: none;
+  z-index: 50;
+}
+
+/* small helpers */
+.muted{color:var(--muted);font-size:13px}
+.hint{font-size:12px;color:var(--muted)}
+.menu-icon{width:18px;height:18px;flex:0 0 18px}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+
+  <!-- Toast "Saved" -->
+  <div id="saveToast" class="save-toast hidden" role="status" aria-live="polite">
+    <img src="https://res.cloudinary.com/dk0f2y0hu/image/upload/v1754744135/MINIApps/MINISheetIcons/Mask_group_yphja3.png" alt="saved">
+    <div style="font-weight:600">Saved</div>
+  </div>
+
+  <div class="toolbar" role="toolbar" aria-label="Main toolbar">
+    <div class="brand" aria-hidden="false">
+      <img src="https://res.cloudinary.com/dk0f2y0hu/image/upload/v1754741669/MINIApps/MINISheets_xnbcui.png" alt="MINISheets logo">
+      <div>MINISheets</div>
+    </div>
+
+    <div class="menus" role="menubar" aria-label="App menu">
+      <!-- FILE (New added with Insert icon) -->
+      <div class="menu" id="menuFile">
+        <button class="menu-btn" aria-haspopup="true" aria-expanded="false">
+          <img class="menu-icon" src="https://res.cloudinary.com/dk0f2y0hu/image/upload/v1754744135/MINIApps/MINISheetIcons/Mask_group-21_qv8fi4.png" alt="">
+          <span>File</span>
+        </button>
+        <div class="dropdown" role="menu" aria-hidden="true">
+          <button id="fileNewBtn" role="menuitem"><img class="menu-icon" src="https://res.cloudinary.com/dk0f2y0hu/image/upload/v1754744693/MINIApps/MINISheetIcons/Mask_group_404_xy0pcm.png" alt=""> New</button>
+          <button id="fileImportBtn" role="menuitem"><img class="menu-icon" src="https://res.cloudinary.com/dk0f2y0hu/image/upload/v1754744134/MINIApps/MINISheetIcons/Mask_group-19_gg7krb.png" alt=""> Import...</button>
+          <button id="fileExportCsvBtn" role="menuitem"><img class="menu-icon" src="https://res.cloudinary.com/dk0f2y0hu/image/upload/v1754744133/MINIApps/MINISheetIcons/Mask_group-18_fqixkp.png" alt=""> Export CSV</button>
+          <button id="filePrintBtn" role="menuitem"><img class="menu-icon" src="https://res.cloudinary.com/dk0f2y0hu/image/upload/v1754744134/MINIApps/MINISheetIcons/Mask_group-20_iezn6u.png" alt=""> Print</button>
+        </div>
+      </div>
+
+      <!-- EDIT -->
+      <div class="menu" id="menuEdit">
+        <button class="menu-btn" aria-haspopup="true" aria-expanded="false">
+          <img class="menu-icon" src="https://res.cloudinary.com/dk0f2y0hu/image/upload/v1754744424/MINIApps/MINISheetIcons/Mask_group_202_xpfpln.png" alt="">
+          <span>Edit</span>
+        </button>
+        <div class="dropdown" role="menu" aria-hidden="true">
+          <button id="undoBtn" role="menuitem"><img class="menu-icon" src="https://res.cloudinary.com/dk0f2y0hu/image/upload/v1754744132/MINIApps/MINISheetIcons/Mask_group-17_u2mak2.png" alt=""> Undo (Ctrl+Z)</button>
+          <button id="redoBtn" role="menuitem"><img class="menu-icon" src="https://res.cloudinary.com/dk0f2y0hu/image/upload/v1754744132/MINIApps/MINISheetIcons/Mask_group-16_profh6.png" alt=""> Redo (Ctrl+Y)</button>
+          <hr style="border:none;border-top:1px solid var(--cell-border);margin:6px 0" />
+          <button id="cutBtn" role="menuitem"><img class="menu-icon" src="https://res.cloudinary.com/dk0f2y0hu/image/upload/v1754744131/MINIApps/MINISheetIcons/Mask_group-15_xuveuy.png" alt=""> Cut</button>
+          <button id="copyBtn" role="menuitem"><img class="menu-icon" src="https://res.cloudinary.com/dk0f2y0hu/image/upload/v1754744125/MINIApps/MINISheetIcons/Mask_group-3_hehv6f.png" alt=""> Copy</button>
+          <button id="pasteBtn" role="menuitem"><img class="menu-icon" src="https://res.cloudinary.com/dk0f2y0hu/image/upload/v1754744126/MINIApps/MINISheetIcons/Mask_group-4_cajywe.png" alt=""> Paste</button>
+          <div style="position:relative">
+            <button id="deleteOpenBtn" role="menuitem"><img class="menu-icon" src="https://res.cloudinary.com/dk0f2y0hu/image/upload/v1754744126/MINIApps/MINISheetIcons/Mask_group-5_cdafar.png" alt=""> Delete</button>
+            <div id="deleteSubmenu" class="delete-submenu" aria-hidden="true">
+              <button id="deleteCellBtn">Delete cell</button>
+              <button id="deleteRowBtn">Delete row</button>
+              <button id="deleteColBtn">Delete column</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- INSERT -->
+      <div class="menu" id="menuInsert">
+        <button class="menu-btn" aria-haspopup="true" aria-expanded="false">
+          <img class="menu-icon" src="https://res.cloudinary.com/dk0f2y0hu/image/upload/v1754744693/MINIApps/MINISheetIcons/Mask_group_404_xy0pcm.png" alt="">
+          <span>Insert</span>
+        </button>
+        <div class="dropdown" role="menu" aria-hidden="true">
+          <button id="insertChartBtn" role="menuitem"><img class="menu-icon" src="https://res.cloudinary.com/dk0f2y0hu/image/upload/v1754744127/MINIApps/MINISheetIcons/Mask_group-6_tq4syz.png" alt=""> Chart</button>
+          <button id="insertImageBtn" role="menuitem"><img class="menu-icon" src="https://res.cloudinary.com/dk0f2y0hu/image/upload/v1754744127/MINIApps/MINISheetIcons/Mask_group-7_gzrtq2.png" alt=""> Image</button>
+          <button id="insertLinkBtn" role="menuitem"><img class="menu-icon" src="https://res.cloudinary.com/dk0f2y0hu/image/upload/v1754744128/MINIApps/MINISheetIcons/Mask_group-8_jkcur1.png" alt=""> Link</button>
+        </div>
+      </div>
+
+      <!-- FORMAT -->
+      <div class="menu" id="menuFormat">
+        <button class="menu-btn" aria-haspopup="true" aria-expanded="false">
+          <img class="menu-icon" src="https://res.cloudinary.com/dk0f2y0hu/image/upload/v1754744692/MINIApps/MINISheetIcons/Mask_group_303_jjxybo.png" alt="">
+          <span>Format</span>
+        </button>
+        <div class="dropdown" role="menu" aria-hidden="true">
+          <button id="boldBtn" role="menuitem"><img class="menu-icon" src="https://res.cloudinary.com/dk0f2y0hu/image/upload/v1754744128/MINIApps/MINISheetIcons/Mask_group-9_uzpxlv.png" alt=""> Bold</button>
+          <button id="italicBtn" role="menuitem"><img class="menu-icon" src="https://res.cloudinary.com/dk0f2y0hu/image/upload/v1754744129/MINIApps/MINISheetIcons/Mask_group-10_y0gh3a.png" alt=""> Italic</button>
+          <button id="underlineBtn" role="menuitem"><img class="menu-icon" src="https://res.cloudinary.com/dk0f2y0hu/image/upload/v1754744129/MINIApps/MINISheetIcons/Mask_group-11_l5qcoh.png" alt=""> Underline</button>
+          <button id="strikeBtn" role="menuitem"><img class="menu-icon" src="https://res.cloudinary.com/dk0f2y0hu/image/upload/v1754744136/MINIApps/MINISheetIcons/Mask_group-12_cfaggl.png" alt=""> Strikethrough</button>
+          <hr style="border:none;border-top:1px solid var(--cell-border);margin:6px 0" />
+          <button data-align="left" class="alignBtn" role="menuitem"><img class="menu-icon" src="https://res.cloudinary.com/dk0f2y0hu/image/upload/v1754744130/MINIApps/MINISheetIcons/Mask_group-13_v8bhyx.png" alt=""> Align left</button>
+          <button data-align="center" class="alignBtn" role="menuitem"><img class="menu-icon" src="https://res.cloudinary.com/dk0f2y0hu/image/upload/v1754744131/MINIApps/MINISheetIcons/Mask_group-14_k14g26.png" alt=""> Align center</button>
+          <button data-align="right" class="alignBtn" role="menuitem"><img class="menu-icon" src="https://res.cloudinary.com/dk0f2y0hu/image/upload/v1754744125/MINIApps/MINISheetIcons/Mask_group-2_ydrwr0.png" alt=""> Align right</button>
+        </div>
+      </div>
+
+    </div>
+
+    <div class="actions" style="margin-left:auto">
+      <button id="functionsListBtn" class="btn ghost" aria-haspopup="dialog">Functions</button>
+    </div>
+  </div>
+
+  <!-- Formula area (no border as requested) -->
+  <div style="display:flex;gap:8px;align-items:center;">
+    <div class="formula-bar" style="flex:1;position:relative">
+      <div class="formula-label">Formula</div>
+      <input id="formulaInput" class="formula-input" placeholder="=A1+B1 or text..." />
+      <div id="formulaSuggest" class="formula-suggestions"></div>
+    </div>
+  </div>
+
+  <div class="sheet-wrap" aria-hidden="false">
+    <div style="display:flex;flex-direction:column;flex:1;min-height:0">
+      <div style="height:var(--cell-size);display:flex;">
+        <div class="row-headers header-cell" style="width:56px;background:var(--header-bg);display:flex;align-items:center;justify-content:center;font-weight:700"> </div>
+        <div class="col-headers" id="colHeaders" style="flex:1;display:flex;overflow:hidden;"></div>
+      </div>
+
+      <div style="display:flex;flex:1;min-height:0;">
+        <div class="row-headers" id="rowHeaders" style="overflow:auto;"></div>
+        <div class="grid-viewport" id="gridViewport">
+          <div class="cells" id="cellsContainer"></div>
+          <!-- selection visual (optional) -->
+          <div id="selRect" class="selection-rect" style="display:none;"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Context menu -->
+<div id="contextMenu" class="context-menu" role="menu" aria-hidden="true">
+  <button data-action="cut"><img class="menu-icon" src="https://res.cloudinary.com/dk0f2y0hu/image/upload/v1754744131/MINIApps/MINISheetIcons/Mask_group-15_xuveuy.png" alt=""> Cut</button>
+  <button data-action="copy"><img class="menu-icon" src="https://res.cloudinary.com/dk0f2y0hu/image/upload/v1754744125/MINIApps/MINISheetIcons/Mask_group-3_hehv6f.png" alt=""> Copy</button>
+  <button data-action="paste"><img class="menu-icon" src="https://res.cloudinary.com/dk0f2y0hu/image/upload/v1754744126/MINIApps/MINISheetIcons/Mask_group-4_cajywe.png" alt=""> Paste</button>
+  <hr style="border:none;border-top:1px solid var(--cell-border);margin:6px 0" />
+  <button data-action="insertRow">Add row</button>
+  <button data-action="insertCol">Add column</button>
+  <button data-action="deleteRow">Delete row</button>
+  <button data-action="deleteCol">Delete column</button>
+</div>
+
+<!-- Import modal -->
+<div id="importModal" class="modal-backdrop" aria-hidden="true">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="importTitle">
+    <h3 id="importTitle">Import file (.xlsx, .xls, .csv, .ods)</h3>
+    <p class="hint">Drop a file here or click to select. Text, numbers and basic formulas will be preserved.</p>
+    <label id="dropzone" class="dropzone" tabindex="0">
+      <div id="dropText">📂 Drop file here or click to select</div>
+      <input id="fileInput" type="file" accept=".xlsx,.xls,.csv,.ods" style="display:none" />
+    </label>
+    <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px">
+      <button class="btn ghost" id="cancelImport">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- Export modal (enter filename) -->
+<div id="exportModal" class="modal-backdrop export-modal" aria-hidden="true">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="exportTitle">
+    <h3 id="exportTitle">Export CSV</h3>
+    <p class="hint">Enter a filename (without extension). If left empty, default is "Untitled".</p>
+    <div class="field">
+      <label for="exportFilename" class="muted">Filename</label>
+      <input id="exportFilename" type="text" placeholder="Untitled" value="Untitled" />
+    </div>
+    <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px">
+      <button class="btn ghost" id="cancelExport">Cancel</button>
+      <button class="btn" id="confirmExport">Export</button>
+    </div>
+  </div>
+</div>
+
+<!-- Function list modal -->
+<div id="funcModal" class="modal-backdrop" aria-hidden="true">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="funcTitle">
+    <h3 id="funcTitle">Supported functions</h3>
+    <ul class="func-list">
+      <li><strong>SUM(range)</strong> — Sum</li>
+      <li><strong>AVERAGE(range)</strong> — Average</li>
+      <li><strong>MAX(range)</strong> — Maximum</li>
+      <li><strong>MIN(range)</strong> — Minimum</li>
+      <li><strong>+ - * /</strong> — Basic arithmetic</li>
+      <li>Cell references (A1), ranges (A1:B2), formulas combining values and references</li>
+    </ul>
+
+    <div class="func-footer" role="contentinfo">
+      <div>Made by <a id="lolloLink" href="https://lollo.framer.website" target="_blank" rel="noopener">lollo21</a></div>
+      <div>Icons by <a id="iconsLink" href="https://icons8.it" target="_blank" rel="noopener">Icons8</a></div>
+    </div>
+
+    <div style="display:flex;justify-content:flex-end;margin-top:12px">
+      <button class="btn ghost" id="closeFuncList">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- Insert image input (hidden) -->
+<input id="imgFileInput" type="file" accept="image/*" style="display:none" />
+
+<script>
+/* MINISheets - Adjusted per latest requests:
+   - Export asks for filename (default "Untitled")
+   - Removed border around the formula area; all UI texts are English
+   - Rest of app functionality preserved from prior version
+*/
+
+(() => {
+  // CONFIG
+  const CELL_W = 120;
+  const CELL_H = 30;
+  const STORAGE_KEY = "minisheets_v1";
+  const MAX_ROWS = 1000;
+  const MAX_COLS = 1000;
+  const FUNCTIONS = ["SUM","AVERAGE","MAX","MIN"];
+  const EXPAND_STEP = 200;
+
+  // column labels
+  const COLS = (() => {
+    const arr=[];
+    for(let i=0;i<MAX_COLS;i++){
+      let s="", n=i;
+      do { s = String.fromCharCode(65 + (n % 26)) + s; n = Math.floor(n/26)-1; } while(n>=0);
+      arr.push(s);
+    }
+    return arr;
+  })();
+  function indexToCol(n){ return COLS[n] || ""; }
+  function colToIndex(col){
+    let res=0;
+    for(let i=0;i<col.length;i++){ res = res*26 + (col.charCodeAt(i)-64); }
+    return res-1;
+  }
+  function coordKey(r,c){ return `${r}:${c}`; }
+  function parseCellAddr(addr){
+    const m=/^([A-Z]+)(\d+)$/i.exec(addr);
+    if(!m) return null;
+    return { r: parseInt(m[2],10)-1, c: colToIndex(m[1].toUpperCase()) };
+  }
+  function rangeToCoords(range){
+    const parts = range.split(":");
+    if(parts.length===1){
+      const p = parseCellAddr(parts[0]); return p ? {r1:p.r,c1:p.c,r2:p.r,c2:p.c} : null;
+    }
+    const a=parseCellAddr(parts[0]); const b=parseCellAddr(parts[1]);
+    if(!a||!b) return null;
+    return { r1: Math.max(0,Math.min(a.r,b.r)), c1: Math.max(0,Math.min(a.c,b.c)), r2: Math.max(a.r,b.r), c2: Math.max(a.c,b.c) };
+  }
+
+  // Model
+  const model = { cells: new Map(), maxRow: 200, maxCol: 50 };
+
+  // Undo/Redo
+  const undoStack = []; const redoStack = []; const MAX_HISTORY = 80;
+  function pushHistory(){
+    try{ const snap = JSON.stringify({cells:Array.from(model.cells.entries()), maxRow:model.maxRow, maxCol:model.maxCol}); undoStack.push(snap); if(undoStack.length>MAX_HISTORY) undoStack.shift(); redoStack.length=0; updateUndoButtons(); }catch(e){console.warn(e);}
+  }
+  function restoreSnapshot(serialized){
+    try{ const p = JSON.parse(serialized); model.cells = new Map(p.cells || []); model.maxRow = p.maxRow || model.maxRow; model.maxCol = p.maxCol || model.maxCol; }catch(e){ console.warn(e); }
+  }
+  function undo(){ if(!undoStack.length) return; const last = undoStack.pop(); redoStack.push(JSON.stringify({cells:Array.from(model.cells.entries()), maxRow:model.maxRow, maxCol:model.maxCol})); restoreSnapshot(last); saveLocal(); renderHeaders(); renderCells(); updateUndoButtons(); showSavedToast(); }
+  function redo(){ if(!redoStack.length) return; const nxt = redoStack.pop(); undoStack.push(JSON.stringify({cells:Array.from(model.cells.entries()), maxRow:model.maxRow, maxCol:model.maxCol})); restoreSnapshot(nxt); saveLocal(); renderHeaders(); renderCells(); updateUndoButtons(); showSavedToast(); }
+  function updateUndoButtons(){ const u = document.getElementById("undoBtn"); const r = document.getElementById("redoBtn"); if(u) u.disabled = undoStack.length===0; if(r) r.disabled = redoStack.length===0; }
+
+  // Persistence + toast
+  function saveLocal(){ try{ const payload = { maxRow: model.maxRow, maxCol: model.maxCol, cells: Array.from(model.cells.entries()) }; localStorage.setItem(STORAGE_KEY, JSON.stringify(payload)); showSavedToast(); }catch(e){ console.warn(e); } }
+  function loadLocal(){ const raw = localStorage.getItem(STORAGE_KEY); if(!raw) return; try{ const p = JSON.parse(raw); model.maxRow = p.maxRow || model.maxRow; model.maxCol = p.maxCol || model.maxCol; model.cells = new Map(p.cells || []); }catch(e){ console.warn(e); } }
+
+  let saveToastTimer=null;
+  function showSavedToast(){
+    const el = document.getElementById("saveToast"); if(!el) return;
+    el.classList.remove("hidden");
+    if(saveToastTimer) clearTimeout(saveToastTimer);
+    saveToastTimer = setTimeout(()=> el.classList.add("hidden"), 1000);
+  }
+
+  // Formula evaluation
+  function getRawValue(r,c){ const it = model.cells.get(coordKey(r,c)); if(!it) return ""; return it.value ?? ""; }
+  function getDisplayValue(r,c){
+    const it = model.cells.get(coordKey(r,c)); if(!it) return "";
+    if(it.meta && it.meta.type === 'image') return {img: it.meta.src};
+    if(it.meta && it.meta.type === 'chart') return {img: it.meta.src};
+    if(it.meta && it.meta.type === 'link') return {link: it.meta.href, text: it.value};
+    if(it.formula && it.formula.startsWith("=")) return evaluateFormula(it.formula, r, c);
+    return it.value ?? "";
+  }
+  function evaluateFormula(formula){
+    const expr = formula.slice(1).trim();
+    if(!expr) return "";
+    try{
+      let tmp = expr.replace(/SUM\(([^)]+)\)/ig, (m,rng) => {
+        const coords = rangeToCoords(rng); if(!coords) return "0"; const vals=[]; for(let rr=coords.r1; rr<=coords.r2; rr++){ for(let cc=coords.c1; cc<=coords.c2; cc++){ const v=parseFloat(getRawValue(rr,cc)); vals.push(isNaN(v)?0:v); } } return vals.reduce((a,b)=>a+b,0).toString();
+      });
+      tmp = tmp.replace(/AVERAGE\(([^)]+)\)/ig, (m,rng)=>{ const coords=rangeToCoords(rng); if(!coords) return "0"; const vals=[]; for(let rr=coords.r1; rr<=coords.r2; rr++){ for(let cc=coords.c1; cc<=coords.c2; cc++){ const v=parseFloat(getRawValue(rr,cc)); vals.push(isNaN(v)?0:v); } } const s=vals.reduce((a,b)=>a+b,0); return (vals.length? (s/vals.length):0).toString(); });
+      tmp = tmp.replace(/MAX\(([^)]+)\)/ig, (m,rng)=>{ const coords=rangeToCoords(rng); if(!coords) return "0"; const vals=[]; for(let rr=coords.r1; rr<=coords.r2; rr++){ for(let cc=coords.c1; cc<=coords.c2; cc++){ const v=parseFloat(getRawValue(rr,cc)); vals.push(isNaN(v)?-Infinity:v); } } return Math.max(...vals).toString(); });
+      tmp = tmp.replace(/MIN\(([^)]+)\)/ig, (m,rng)=>{ const coords=rangeToCoords(rng); if(!coords) return "0"; const vals=[]; for(let rr=coords.r1; rr<=coords.r2; rr++){ for(let cc=coords.c1; cc<=coords.c2; cc++){ const v=parseFloat(getRawValue(rr,cc)); vals.push(isNaN(v)?Infinity:v); } } return Math.min(...vals).toString(); });
+
+      const withRefs = tmp.replace(/([A-Z]+[0-9]+)/ig, (mAddr) => {
+        const p = parseCellAddr(mAddr);
+        if(!p) return "0";
+        const raw = getRawValue(p.r,p.c);
+        const num = parseFloat(raw);
+        if(!isNaN(num) && String(raw).trim()!=="") return num;
+        return JSON.stringify(String(raw||""));
+      });
+
+      if(/[^0-9+\-*/()., \t"']/.test(withRefs)){ if(/[A-Za-z]/.test(withRefs)) return "#ERR"; }
+      // eslint-disable-next-line no-new-func
+      const res = Function('"use strict"; return (' + withRefs + ')')();
+      return res;
+    }catch(e){ return "#ERR"; }
+  }
+
+  // DOM refs
+  const colHeadersEl = document.getElementById("colHeaders");
+  const rowHeadersEl = document.getElementById("rowHeaders");
+  const gridViewport = document.getElementById("gridViewport");
+  const cellsContainer = document.getElementById("cellsContainer");
+  const selRectEl = document.getElementById("selRect");
+  const formulaInput = document.getElementById("formulaInput");
+  const formulaSuggestEl = document.getElementById("formulaSuggest");
+  const contextMenu = document.getElementById("contextMenu");
+  const importModal = document.getElementById("importModal");
+  const exportModal = document.getElementById("exportModal");
+  const funcModal = document.getElementById("funcModal");
+  const dropzone = document.getElementById("dropzone");
+  const fileInput = document.getElementById("fileInput");
+  const imgFileInput = document.getElementById("imgFileInput");
+  const deleteSubmenu = document.getElementById("deleteSubmenu");
+  const exportFilenameInput = document.getElementById("exportFilename");
+
+  // viewport & selection
+  let cellViewport = { rStart:0, cStart:0, rCount:40, cCount:10 };
+  let viewportPx = { width:0, height:0 };
+  let sel = { r:0, c:0, editing:false };
+  let selectionRect = null; // multi selection
+  let isSelecting = false;
+  let selectionStart = null;
+
+  function ensureSize(){
+    viewportPx.width = gridViewport.clientWidth; viewportPx.height = gridViewport.clientHeight;
+    cellViewport.cCount = Math.min(MAX_COLS, Math.ceil(viewportPx.width / CELL_W) + 6);
+    cellViewport.rCount = Math.min(MAX_ROWS, Math.ceil(viewportPx.height / CELL_H) + 6);
+  }
+
+  function renderHeaders(){
+    colHeadersEl.innerHTML = "";
+    const frag = document.createDocumentFragment();
+    const colsTo = Math.min(model.maxCol, cellViewport.cStart + cellViewport.cCount);
+    for(let c = cellViewport.cStart; c < colsTo; c++){
+      const div = document.createElement("div");
+      div.className = "header-cell";
+      div.style.minWidth = CELL_W + "px";
+      div.style.padding = "0 8px";
+      div.textContent = indexToCol(c);
+      div.dataset.c = c;
+      frag.appendChild(div);
+    }
+    colHeadersEl.appendChild(frag);
+
+    rowHeadersEl.innerHTML = "";
+    const frag2 = document.createDocumentFragment();
+    const rowsTo = Math.min(model.maxRow, cellViewport.rStart + cellViewport.rCount);
+    for(let r = cellViewport.rStart; r < rowsTo; r++){
+      const div = document.createElement("div");
+      div.className = "header-cell";
+      div.style.height = CELL_H + "px";
+      div.style.display = "flex"; div.style.alignItems = "center"; div.style.justifyContent = "center";
+      div.textContent = (r+1);
+      div.dataset.r = r;
+      frag2.appendChild(div);
+    }
+    rowHeadersEl.appendChild(frag2);
+  }
+
+  function renderCells(){
+    cellsContainer.innerHTML = "";
+    const frag = document.createDocumentFragment();
+    const startR = cellViewport.rStart;
+    const startC = cellViewport.cStart;
+
+    cellsContainer.style.width = (model.maxCol * CELL_W) + "px";
+    cellsContainer.style.height = (model.maxRow * CELL_H) + "px";
+
+    for(let r = startR; r < startR + cellViewport.rCount && r < model.maxRow; r++){
+      for(let c = startC; c < startC + cellViewport.cCount && c < model.maxCol; c++){
+        const el = document.createElement("div");
+        el.className = "cell";
+        el.style.top = (r * CELL_H) + "px";
+        el.style.left = (c * CELL_W) + "px";
+        el.style.width = (CELL_W) + "px";
+        el.style.height = CELL_H + "px";
+        el.dataset.r = r; el.dataset.c = c;
+
+        const val = getDisplayValue(r,c);
+        const cellData = model.cells.get(coordKey(r,c));
+        if(cellData && cellData.style){
+          if(cellData.style.bold) el.style.fontWeight = "700"; else el.style.fontWeight = "";
+          if(cellData.style.italic) el.style.fontStyle = "italic"; else el.style.fontStyle = "";
+          let dec = [];
+          if(cellData.style.underline) dec.push("underline");
+          if(cellData.style.strike) dec.push("line-through");
+          el.style.textDecoration = dec.join(" ");
+          if(cellData.style.align) el.style.textAlign = cellData.style.align; else el.style.textAlign = "";
+        } else {
+          el.style.fontWeight = ""; el.style.fontStyle=""; el.style.textDecoration=""; el.style.textAlign="";
+        }
+
+        if(typeof val === "object" && val.img){
+          const img = document.createElement('img'); img.src = val.img; el.appendChild(img);
+        } else if(typeof val === "object" && val.link){
+          const a = document.createElement('a'); a.href = val.link; a.textContent = val.text || val.link; a.target="_blank"; el.appendChild(a);
+        } else {
+          el.textContent = (val === undefined ? "" : String(val));
+        }
+
+        // highlight selection
+        if(selectionRect && r >= selectionRect.r1 && r <= selectionRect.r2 && c >= selectionRect.c1 && c <= selectionRect.c2){
+          el.classList.add("selected");
+        } else if(!selectionRect && r === sel.r && c === sel.c){
+          el.classList.add(sel.editing ? "editing" : "selected");
+        }
+
+        el.addEventListener("dblclick", ()=> enterEdit(r,c));
+        el.addEventListener("click", (ev) => {
+          if(!isSelecting){
+            selectionRect = null;
+            sel.r = r; sel.c = c; sel.editing=false; updateSelection();
+          }
+        });
+        frag.appendChild(el);
+      }
+    }
+    cellsContainer.appendChild(frag);
+    updateFormulaInput();
+    drawSelectionRect();
+  }
+
+  function updateFormulaInput(){
+    if(selectionRect){
+      const topLeftR = selectionRect.r1, topLeftC = selectionRect.c1;
+      const it = model.cells.get(coordKey(topLeftR, topLeftC));
+      if(it && it.formula != null) formulaInput.value = it.formula;
+      else if(it && it.value != null) formulaInput.value = it.value;
+      else formulaInput.value = "";
+    } else {
+      const it = model.cells.get(coordKey(sel.r, sel.c));
+      if(it && it.formula != null) formulaInput.value = it.formula;
+      else if(it && it.value != null) formulaInput.value = it.value;
+      else formulaInput.value = "";
+    }
+  }
+
+  function updateSelection(){
+    const sTop = gridViewport.scrollTop; const sLeft = gridViewport.scrollLeft;
+    const rStart = Math.floor(sTop / CELL_H); const cStart = Math.floor(sLeft / CELL_W);
+    let changed=false;
+    if(sel.c < cStart){ cellViewport.cStart = Math.max(0, sel.c); changed=true; }
+    else if(sel.c >= cStart + cellViewport.cCount){ cellViewport.cStart = Math.max(0, sel.c - Math.floor(cellViewport.cCount/2)); changed=true; }
+    if(sel.r < rStart){ cellViewport.rStart = Math.max(0, sel.r); changed=true; }
+    else if(sel.r >= rStart + cellViewport.rCount){ cellViewport.rStart = Math.max(0, sel.r - Math.floor(cellViewport.rCount/2)); changed=true; }
+
+    if(changed){
+      expandIfNeeded();
+      renderHeaders(); renderCells(); syncScroll();
+    } else {
+      cellsContainer.querySelectorAll(".cell").forEach(el=>{
+        const r = parseInt(el.dataset.r,10), c = parseInt(el.dataset.c,10);
+        if(selectionRect && r >= selectionRect.r1 && r <= selectionRect.r2 && c >= selectionRect.c1 && c <= selectionRect.c2){
+          el.classList.add("selected");
+        } else {
+          el.classList.remove("selected");
+          if(!selectionRect && r === sel.r && c === sel.c) el.classList.add(sel.editing ? "editing" : "selected");
+        }
+      });
+      updateFormulaInput();
+      drawSelectionRect();
+    }
+  }
+
+  function enterEdit(r,c){
+    selectionRect = null;
+    sel.r=r; sel.c=c; sel.editing=true;
+    updateSelection();
+    const cellEl = cellsContainer.querySelector(`.cell[data-r="${r}"][data-c="${c}"]`);
+    if(!cellEl) return;
+    cellEl.innerHTML = "";
+    const input = document.createElement("input");
+    input.style.width = "100%"; input.style.height = "100%"; input.style.border="none"; input.style.outline="none"; input.style.font="inherit";
+    const raw = model.cells.get(coordKey(r,c));
+    input.value = raw ? (raw.formula != null ? raw.formula : raw.value || "") : "";
+    cellEl.appendChild(input); input.focus(); input.setSelectionRange(0, input.value.length);
+    input.addEventListener("blur", ()=> commitEdit(r,c,input.value));
+    input.addEventListener("keydown", (ev)=>{
+      if(ev.key === "Enter"){ ev.preventDefault(); input.blur(); }
+      else if(ev.key === "Escape"){ sel.editing=false; updateSelection(); }
+    });
+  }
+
+  function commitEdit(r,c,val){
+    pushHistory();
+    const key = coordKey(r,c);
+    if(val == null || val === "") model.cells.delete(key);
+    else {
+      if(val.startsWith("=")) model.cells.set(key, { formula: val, value: "", style: (model.cells.get(key)?.style || null) });
+      else model.cells.set(key, { value: val, formula: null, style: (model.cells.get(key)?.style || null) });
+    }
+    sel.editing=false;
+    if(r+10 > model.maxRow) model.maxRow = Math.min(MAX_ROWS, r + EXPAND_STEP);
+    if(c+10 > model.maxCol) model.maxCol = Math.min(MAX_COLS, c + EXPAND_STEP);
+    recalcAll(); saveLocal(); renderHeaders(); renderCells();
+  }
+
+  function recalcAll(){ renderCells(); }
+  function syncScroll(){ colHeadersEl.scrollLeft = gridViewport.scrollLeft; rowHeadersEl.scrollTop = gridViewport.scrollTop; }
+
+  function onGridScroll(){
+    const top = gridViewport.scrollTop; const left = gridViewport.scrollLeft;
+    cellViewport.rStart = Math.floor(top / CELL_H); cellViewport.cStart = Math.floor(left / CELL_W);
+    expandIfNeeded(); renderHeaders(); renderCells(); syncScroll();
+  }
+
+  function expandIfNeeded(){
+    const visibleBottom = cellViewport.rStart + cellViewport.rCount;
+    const visibleRight = cellViewport.cStart + cellViewport.cCount;
+    if(visibleBottom + 50 >= model.maxRow && model.maxRow < MAX_ROWS){
+      model.maxRow = Math.min(MAX_ROWS, model.maxRow + EXPAND_STEP);
+    }
+    if(visibleRight + 20 >= model.maxCol && model.maxCol < MAX_COLS){
+      model.maxCol = Math.min(MAX_COLS, model.maxCol + Math.max(EXPAND_STEP/5, 20));
+    }
+  }
+
+  // Multi-selection helpers
+  function normalizeRect(r1,c1,r2,c2){
+    const rr1 = Math.max(0, Math.min(r1,r2));
+    const rr2 = Math.min(MAX_ROWS-1, Math.max(r1,r2));
+    const cc1 = Math.max(0, Math.min(c1,c2));
+    const cc2 = Math.min(MAX_COLS-1, Math.max(c1,c2));
+    return { r1: rr1, c1: cc1, r2: rr2, c2: cc2 };
+  }
+  function setSelectionRect(r1,c1,r2,c2){
+    selectionRect = normalizeRect(r1,c1,r2,c2);
+    sel.r = selectionRect.r1; sel.c = selectionRect.c1; sel.editing=false;
+    updateSelection();
+    drawSelectionRect();
+  }
+  function clearSelectionRect(){ selectionRect = null; sel.editing=false; updateSelection(); hideSelectionRect(); }
+
+  function drawSelectionRect(){
+    if(!selectionRect){ hideSelectionRect(); return; }
+    const rect = selectionRect;
+    const left = rect.c1 * CELL_W;
+    const top = rect.r1 * CELL_H;
+    const width = (rect.c2 - rect.c1 + 1) * CELL_W;
+    const height = (rect.r2 - rect.r1 + 1) * CELL_H;
+    selRectEl.style.display = "block";
+    selRectEl.style.left = left + "px";
+    selRectEl.style.top = top + "px";
+    selRectEl.style.width = width + "px";
+    selRectEl.style.height = height + "px";
+    selRectEl.style.position = "absolute";
+  }
+  function hideSelectionRect(){ selRectEl.style.display = "none"; }
+
+  // Clipboard & edit actions (support multi-selection)
+  async function copySelection(){
+    if(selectionRect && (selectionRect.r2 !== selectionRect.r1 || selectionRect.c2 !== selectionRect.c1)){
+      const r1 = selectionRect.r1, r2 = selectionRect.r2, c1 = selectionRect.c1, c2 = selectionRect.c2;
+      const rows = [];
+      for(let r=r1;r<=r2;r++){
+        const cols = [];
+        for(let c=c1;c<=c2;c++){
+          const it = model.cells.get(coordKey(r,c));
+          let v = "";
+          if(it){
+            if(it.formula && it.formula.startsWith("=")) v = it.formula;
+            else v = it.value ?? "";
+          }
+          cols.push(v);
+        }
+        rows.push(cols.join("\t"));
+      }
+      const text = rows.join("\n");
+      try{ await navigator.clipboard.writeText(text); }catch(e){ console.warn(e); }
+    } else {
+      const raw = model.cells.get(coordKey(sel.r,sel.c));
+      const value = raw ? (raw.formula != null ? raw.formula : (raw.value ?? "")) : "";
+      try{ await navigator.clipboard.writeText(String(value)); }catch(e){ console.warn(e); }
+    }
+  }
+  async function cutSelection(){
+    if(selectionRect && (selectionRect.r2 !== selectionRect.r1 || selectionRect.c2 !== selectionRect.c1)){
+      await copySelection();
+      pushHistory();
+      for(let r=selectionRect.r1;r<=selectionRect.r2;r++){
+        for(let c=selectionRect.c1;c<=selectionRect.c2;c++){
+          model.cells.delete(coordKey(r,c));
+        }
+      }
+      selectionRect = null;
+      saveLocal(); renderHeaders(); renderCells();
+    } else {
+      const raw = model.cells.get(coordKey(sel.r,sel.c));
+      const value = raw ? (raw.formula != null ? raw.formula : (raw.value ?? "")) : "";
+      try{ await navigator.clipboard.writeText(String(value)); pushHistory(); model.cells.delete(coordKey(sel.r,sel.c)); recalcAll(); saveLocal(); renderCells(); }catch(e){ console.warn(e); }
+    }
+  }
+  async function pasteClipboard(){
+    try{
+      const text = await navigator.clipboard.readText();
+      if(!text) return;
+      pushHistory();
+      const targetR = sel.r;
+      const targetC = sel.c;
+      if(text.indexOf("\t")>=0 || text.indexOf("\n")>=0){
+        const rows = text.split(/\r?\n/).filter(Boolean);
+        rows.forEach((rowText, ri) => {
+          const cols = rowText.split("\t");
+          cols.forEach((cellText, ci)=>{
+            const r = targetR + ri; const c = targetC + ci;
+            if(r < 0 || c < 0 || r >= MAX_ROWS || c >= MAX_COLS) return;
+            const key = coordKey(r,c);
+            if(cellText.startsWith("=")) model.cells.set(key,{formula:cellText, value:"", style: (model.cells.get(key)?.style || null) });
+            else model.cells.set(key,{value:cellText, formula:null, style: (model.cells.get(key)?.style || null)});
+          });
+        });
+      } else {
+        const key = coordKey(targetR, targetC);
+        if(text.startsWith("=")) model.cells.set(key,{formula:text, value:"", style: (model.cells.get(key)?.style || null)});
+        else model.cells.set(key,{value:text, formula:null, style: (model.cells.get(key)?.style || null)});
+      }
+      recalcAll(); saveLocal(); renderHeaders(); renderCells();
+    }catch(e){ console.warn("paste err", e); }
+  }
+
+  // Row/Col insert/delete
+  function insertRow(at){
+    pushHistory();
+    const newMap = new Map();
+    model.cells.forEach((v,k)=>{
+      const [r,c] = k.split(":").map(Number);
+      if(r >= at) newMap.set(coordKey(r+1,c), v); else newMap.set(k,v);
+    });
+    model.cells = newMap;
+    model.maxRow = Math.min(MAX_ROWS, model.maxRow + 1);
+    saveLocal(); renderHeaders(); renderCells();
+  }
+  function insertCol(at){
+    pushHistory();
+    const newMap = new Map();
+    model.cells.forEach((v,k)=>{
+      const [r,c] = k.split(":").map(Number);
+      if(c >= at) newMap.set(coordKey(r,c+1), v); else newMap.set(k,v);
+    });
+    model.cells = newMap;
+    model.maxCol = Math.min(MAX_COLS, model.maxCol + 1);
+    saveLocal(); renderHeaders(); renderCells();
+  }
+  function deleteRow(at){
+    pushHistory();
+    const newMap = new Map();
+    model.cells.forEach((v,k)=>{
+      const [r,c] = k.split(":").map(Number);
+      if(r === at) return;
+      if(r > at) newMap.set(coordKey(r-1,c), v); else newMap.set(k,v);
+    });
+    model.cells = newMap;
+    model.maxRow = Math.max(10, model.maxRow-1);
+    saveLocal(); renderHeaders(); renderCells();
+  }
+  function deleteCol(at){
+    pushHistory();
+    const newMap = new Map();
+    model.cells.forEach((v,k)=>{
+      const [r,c] = k.split(":").map(Number);
+      if(c === at) return;
+      if(c > at) newMap.set(coordKey(r,c-1), v); else newMap.set(k,v);
+    });
+    model.cells = newMap;
+    model.maxCol = Math.max(10, model.maxCol-1);
+    saveLocal(); renderHeaders(); renderCells();
+  }
+
+  // Import using SheetJS
+  function openImportModal(){ importModal.style.display = "flex"; importModal.setAttribute("aria-hidden","false"); }
+  function closeImportModal(){ importModal.style.display = "none"; importModal.setAttribute("aria-hidden","true"); }
+  function handleFiles(files){
+    if(!files || files.length===0) return;
+    const f = files[0];
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const data = e.target.result;
+      try{
+        let wb;
+        if(f.name.toLowerCase().endsWith(".csv")) wb = XLSX.read(data, {type:'string'});
+        else wb = XLSX.read(data, {type:'array'});
+        const first = wb.Sheets[wb.SheetNames[0]];
+        const arr = XLSX.utils.sheet_to_json(first, {header:1, raw:false});
+        importArray(arr);
+        closeImportModal();
+      }catch(err){
+        alert("Import error: " + (err && err.message ? err.message : err));
+      }
+    };
+    if(f.name.toLowerCase().endsWith(".csv")) reader.readAsText(f);
+    else reader.readAsArrayBuffer(f);
+  }
+  function importArray(arr){
+    pushHistory();
+    model.cells = new Map();
+    let maxR=0,maxC=0;
+    arr.forEach((row,r)=>{
+      row.forEach((cell,c)=>{
+        if(cell === null || cell === undefined || cell === "") return;
+        const key = coordKey(r,c);
+        const s = String(cell);
+        if(s.startsWith("=")) model.cells.set(key,{formula:s,value:"",style:null});
+        else model.cells.set(key,{value:s,formula:null,style:null});
+        if(r>maxR)maxR=r; if(c>maxC)maxC=c;
+      });
+    });
+    model.maxRow = Math.min(MAX_ROWS, Math.max(model.maxRow, maxR + 50));
+    model.maxCol = Math.min(MAX_COLS, Math.max(model.maxCol, maxC + 20));
+    saveLocal(); renderHeaders(); renderCells();
+  }
+
+  // Export CSV (now accepts filename)
+  function exportCsv(filename){
+    const safeName = (filename && String(filename).trim()) ? String(filename).trim() : "Untitled";
+    const rows = Math.min(model.maxRow, 500);
+    const cols = Math.min(model.maxCol, 200);
+    const lines=[];
+    for(let r=0;r<rows;r++){
+      const row=[];
+      for(let c=0;c<cols;c++){
+        const it = model.cells.get(coordKey(r,c));
+        let v="";
+        if(it){
+          if(it.formula && it.formula.startsWith("=")) v = it.formula;
+          else v = it.value ?? "";
+        }
+        if(typeof v === "string" && (v.indexOf(",")>=0 || v.indexOf('"')>=0 || v.indexOf("\n")>=0)) v = '"' + v.replace(/"/g,'""') + '"';
+        row.push(v);
+      }
+      lines.push(row.join(","));
+    }
+    const csv = lines.join("\r\n");
+    const blob = new Blob([csv], {type:'text/csv;charset=utf-8;'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a"); a.href=url; a.download = safeName + ".csv"; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+  }
+
+  // Print view (unchanged)
+  function printSheet(){
+    let minR=Infinity, minC=Infinity, maxR=-1, maxC=-1;
+    model.cells.forEach((v,k)=>{
+      const [r,c] = k.split(":").map(Number);
+      if(v && (v.value || v.formula || v.meta)) {
+        minR = Math.min(minR, r); minC = Math.min(minC, c);
+        maxR = Math.max(maxR, r); maxC = Math.max(maxC, c);
+      }
+    });
+    if(maxR === -1){ minR = 0; minC = 0; maxR = Math.min(20, model.maxRow-1); maxC = Math.min(8, model.maxCol-1); }
+    let html = '<!doctype html><html><head><meta charset="utf-8"><title>MINISheets - Print</title>';
+    html += '<style>body{font-family:Inter,Arial;padding:18px}table{border-collapse:collapse;width:100%}td,th{border:1px solid #ddd;padding:6px;font-size:12px}</style>';
+    html += '</head><body><table><thead><tr><th></th>';
+    for(let c=minC; c<=maxC; c++){ html += '<th>' + indexToCol(c) + '</th>'; }
+    html += '</tr></thead><tbody>';
+    for(let r=minR; r<=maxR; r++){
+      html += '<tr><th>' + (r+1) + '</th>';
+      for(let c=minC; c<=maxC; c++){
+        const it = model.cells.get(coordKey(r,c));
+        let v = "";
+        if(it){
+          if(it.formula && it.formula.startsWith("=")) v = it.formula;
+          else if(it.meta && it.meta.type === 'link') v = it.value || it.meta.href;
+          else v = it.value || "";
+        }
+        html += '<td>' + (v === undefined ? "" : String(v)) + '</td>';
+      }
+      html += '</tr>';
+    }
+    html += '</tbody></table></body></html>';
+    const w = window.open('','_blank','noopener');
+    if(!w) { alert("Popup blocked — allow popups to print."); return; }
+    w.document.open(); w.document.write(html); w.document.close();
+    setTimeout(()=>{ w.print(); }, 400);
+  }
+
+  // Insert image/link/chart (unchanged)
+  function insertImageAtSelection(file){
+    const reader = new FileReader();
+    reader.onload = (e)=>{
+      pushHistory();
+      const dataUrl = e.target.result;
+      const key = coordKey(sel.r, sel.c);
+      model.cells.set(key, { value: "", formula: null, style: (model.cells.get(key)?.style || null), meta: {type:'image', src: dataUrl} });
+      saveLocal(); renderCells();
+    };
+    reader.readAsDataURL(file);
+  }
+  function insertLink(){
+    const url = prompt("Insert URL (include https://):");
+    if(!url) return;
+    const text = prompt("Link text (optional):", url) || url;
+    pushHistory();
+    const key = coordKey(sel.r, sel.c);
+    model.cells.set(key, { value: text, formula: null, style: (model.cells.get(key)?.style || null), meta: {type:'link', href: url} });
+    saveLocal(); renderCells();
+  }
+  function insertChart(){
+    const rng = prompt("Range for chart (e.g. A1:A5):", "");
+    if(!rng) return;
+    const coords = rangeToCoords(rng);
+    if(!coords){ alert("Invalid range"); return; }
+    const values = []; const labels = [];
+    for(let rr = coords.r1; rr<=coords.r2; rr++){
+      for(let cc = coords.c1; cc<=coords.c2; cc++){
+        const v = parseFloat(getRawValue(rr,cc));
+        labels.push(indexToCol(cc) + (rr+1));
+        values.push(isNaN(v)?0:v);
+      }
+    }
+    const canvas = document.createElement("canvas"); canvas.width = 600; canvas.height = 300;
+    const ctx = canvas.getContext("2d");
+    ctx.fillStyle = "#fff"; ctx.fillRect(0,0,canvas.width,canvas.height);
+    const max = Math.max(...values,1);
+    const barW = Math.floor(canvas.width / values.length * 0.6);
+    values.forEach((val,i)=>{
+      const h = Math.round((val / max) * (canvas.height - 40));
+      const x = 20 + i * (canvas.width / values.length);
+      ctx.fillStyle = "#74BA6C"; ctx.fillRect(x, canvas.height - h - 20, barW, h);
+      ctx.fillStyle = "#333"; ctx.font = "10px Inter"; ctx.fillText(labels[i]||i+1, x, canvas.height - 4);
+    });
+    const url = canvas.toDataURL("image/png");
+    pushHistory();
+    model.cells.set(coordKey(sel.r, sel.c), { value: "", formula: null, style: (model.cells.get(coordKey(sel.r, sel.c))?.style||null), meta: {type:'chart', src: url} });
+    saveLocal(); renderCells();
+  }
+
+  // Formatting helpers
+  function toggleStyle(styleKey){ pushHistory(); const key = coordKey(sel.r, sel.c); const cell = model.cells.get(key) || { value: "", formula: null, style: {} }; cell.style = cell.style || {}; cell.style[styleKey] = !cell.style[styleKey]; model.cells.set(key, cell); saveLocal(); renderCells(); }
+  function setAlign(align){ pushHistory(); const key = coordKey(sel.r, sel.c); const cell = model.cells.get(key) || { value: "", formula: null, style: {} }; cell.style = cell.style || {}; cell.style.align = align; model.cells.set(key, cell); saveLocal(); renderCells(); }
+
+  // Formula suggestions
+  function showFormulaSuggestions(){ const v = formulaInput.value.toUpperCase(); if(!v.startsWith("=")){ formulaSuggestEl.style.display = "none"; return; } const q = v.slice(1); const matches = FUNCTIONS.filter(f => f.startsWith(q)); if(matches.length === 0){ formulaSuggestEl.style.display = "none"; return; } formulaSuggestEl.innerHTML = matches.map(m => `<div data-f="${m}">${m}</div>`).join(""); formulaSuggestEl.style.display = "block"; const rect = formulaInput.getBoundingClientRect(); formulaSuggestEl.style.left = rect.left + "px"; formulaSuggestEl.style.top = (rect.bottom + 6) + "px"; }
+  formulaSuggestEl.addEventListener("click",(ev)=>{ const f = ev.target.dataset.f; if(!f) return; formulaInput.value = "=" + f + "("; formulaInput.focus(); formulaSuggestEl.style.display = "none"; });
+  formulaInput.addEventListener("keydown",(ev)=>{ if(ev.key === "Enter"){ ev.preventDefault(); applyFormulaBar(); } else setTimeout(showFormulaSuggestions, 0); });
+
+  function applyFormulaBar(){ const v = formulaInput.value; const key = coordKey(sel.r, sel.c); pushHistory(); if(!v) model.cells.delete(key); else if(v.startsWith("=")) model.cells.set(key, { formula: v, value: "", style: (model.cells.get(key)?.style || null) }); else model.cells.set(key, { value: v, formula: null, style: (model.cells.get(key)?.style || null) }); recalcAll(); saveLocal(); renderHeaders(); renderCells(); }
+
+  // Context menu
+  gridViewport.addEventListener("contextmenu", (ev)=>{
+    ev.preventDefault();
+    const target = ev.target.closest(".cell");
+    if(target){ sel.r = parseInt(target.dataset.r,10); sel.c = parseInt(target.dataset.c,10); sel.editing=false; selectionRect = null; updateSelection(); }
+    showContextMenu(ev.pageX, ev.pageY);
+  });
+  function showContextMenu(x,y){ contextMenu.style.left = x + "px"; contextMenu.style.top = y + "px"; contextMenu.style.display = "block"; contextMenu.setAttribute("aria-hidden","false"); }
+  function hideContextMenu(){ contextMenu.style.display = "none"; contextMenu.setAttribute("aria-hidden","true"); }
+  contextMenu.addEventListener("click", (ev)=>{
+    const action = ev.target.closest("button")?.dataset?.action;
+    hideContextMenu();
+    if(!action) return;
+    if(action === "cut") cutSelection();
+    if(action === "copy") copySelection();
+    if(action === "paste") pasteClipboard();
+    if(action === "insertRow") insertRow(sel.r+1);
+    if(action === "insertCol") insertCol(sel.c+1);
+    if(action === "deleteRow") deleteRow(sel.r);
+    if(action === "deleteCol") deleteCol(sel.c);
+  });
+  window.addEventListener("click",(ev)=>{ if(!ev.target.closest(".context-menu")) hideContextMenu(); });
+
+  // Menus open/close
+  document.querySelectorAll(".menu").forEach(m=>{
+    const btn = m.querySelector(".menu-btn");
+    const dd = m.querySelector(".dropdown");
+    btn.addEventListener("click",(ev)=>{
+      ev.stopPropagation();
+      document.querySelectorAll(".menu .dropdown").forEach(x=>{ if(x!==dd) x.style.display="none"; });
+      dd.style.display = dd.style.display === "block" ? "none" : "block";
+    });
+  });
+  window.addEventListener("click", ()=> document.querySelectorAll(".menu .dropdown").forEach(x=> x.style.display = "none"));
+
+  // File actions
+  document.getElementById("fileNewBtn").addEventListener("click", ()=>{
+    if(!confirm("Create new file? This will clear the current sheet.")) return;
+    pushHistory();
+    model.cells.clear();
+    model.maxRow = 200; model.maxCol = 50;
+    selectionRect = null;
+    saveLocal(); renderHeaders(); renderCells();
+  });
+  document.getElementById("fileImportBtn").addEventListener("click", ()=> openImportModal());
+
+  // EXPORT: open export modal to enter filename
+  const exportModalEl = document.getElementById("exportModal");
+  document.getElementById("fileExportCsvBtn").addEventListener("click", ()=>{
+    exportFilenameInput.value = "Untitled";
+    exportModalEl.style.display = "flex";
+    exportModalEl.setAttribute("aria-hidden","false");
+    exportFilenameInput.select();
+  });
+  document.getElementById("cancelExport").addEventListener("click", ()=>{
+    exportModalEl.style.display = "none";
+    exportModalEl.setAttribute("aria-hidden","true");
+  });
+  document.getElementById("confirmExport").addEventListener("click", ()=>{
+    const fname = exportFilenameInput.value || "Untitled";
+    exportModalEl.style.display = "none";
+    exportModalEl.setAttribute("aria-hidden","true");
+    exportCsv(fname);
+  });
+
+  document.getElementById("filePrintBtn").addEventListener("click", ()=> printSheet());
+
+  // Edit actions
+  document.getElementById("undoBtn").addEventListener("click", undo);
+  document.getElementById("redoBtn").addEventListener("click", redo);
+  document.getElementById("cutBtn").addEventListener("click", cutSelection);
+  document.getElementById("copyBtn").addEventListener("click", copySelection);
+  document.getElementById("pasteBtn").addEventListener("click", pasteClipboard);
+
+  // Delete submenu
+  const deleteOpenBtn = document.getElementById("deleteOpenBtn");
+  deleteOpenBtn.addEventListener("click", (ev)=>{
+    ev.stopPropagation();
+    const rect = deleteOpenBtn.getBoundingClientRect();
+    deleteSubmenu.style.left = rect.left + "px";
+    deleteSubmenu.style.top = (rect.bottom + 6) + "px";
+    deleteSubmenu.style.display = deleteSubmenu.style.display === "block" ? "none" : "block";
+  });
+  document.getElementById("deleteCellBtn").addEventListener("click", ()=> { pushHistory(); if(selectionRect){ for(let r=selectionRect.r1;r<=selectionRect.r2;r++){ for(let c=selectionRect.c1;c<=selectionRect.c2;c++){ model.cells.delete(coordKey(r,c)); } } selectionRect=null; } else model.cells.delete(coordKey(sel.r,sel.c)); saveLocal(); renderCells(); deleteSubmenu.style.display='none'; });
+  document.getElementById("deleteRowBtn").addEventListener("click", ()=> { deleteRow(sel.r); deleteSubmenu.style.display='none'; });
+  document.getElementById("deleteColBtn").addEventListener("click", ()=> { deleteCol(sel.c); deleteSubmenu.style.display='none'; });
+
+  // Close delete submenu when clicking outside
+  document.addEventListener("click", (ev)=>{ if(!ev.target.closest("#deleteSubmenu") && !ev.target.closest("#deleteOpenBtn")) deleteSubmenu.style.display = 'none'; });
+
+  // Insert
+  document.getElementById("insertImageBtn").addEventListener("click", ()=> imgFileInput.click());
+  imgFileInput.addEventListener("change",(ev)=>{ if(ev.target.files && ev.target.files[0]) insertImageAtSelection(ev.target.files[0]); ev.target.value = ""; });
+  document.getElementById("insertLinkBtn").addEventListener("click", insertLink);
+  document.getElementById("insertChartBtn").addEventListener("click", insertChart);
+
+  // Format
+  document.getElementById("boldBtn").addEventListener("click", ()=> toggleStyle("bold"));
+  document.getElementById("italicBtn").addEventListener("click", ()=> toggleStyle("italic"));
+  document.getElementById("underlineBtn").addEventListener("click", ()=> toggleStyle("underline"));
+  document.getElementById("strikeBtn").addEventListener("click", ()=> toggleStyle("strike"));
+  document.querySelectorAll(".alignBtn").forEach(b => b.addEventListener("click", ()=> setAlign(b.dataset.align)));
+
+  // Functions modal
+  document.getElementById("functionsListBtn").addEventListener("click", ()=> { document.getElementById("funcModal").style.display = "flex"; document.getElementById("funcModal").setAttribute("aria-hidden","false"); });
+  document.getElementById("closeFuncList").addEventListener("click", ()=> { document.getElementById("funcModal").style.display = "none"; document.getElementById("funcModal").setAttribute("aria-hidden","true"); });
+
+  // Import modal DnD
+  dropzone.addEventListener("click", ()=> fileInput.click());
+  dropzone.addEventListener("dragover", (ev)=>{ ev.preventDefault(); dropzone.classList.add("drag"); });
+  dropzone.addEventListener("dragleave", ()=> dropzone.classList.remove("drag"));
+  dropzone.addEventListener("drop", (ev)=>{ ev.preventDefault(); dropzone.classList.remove("drag"); handleFiles(ev.dataTransfer.files); });
+  fileInput.addEventListener("change", (ev)=> handleFiles(ev.target.files));
+  document.getElementById("cancelImport").addEventListener("click", closeImportModal);
+
+  // Keyboard nav & shortcuts
+  window.addEventListener("keydown",(ev)=>{
+    if(document.activeElement === formulaInput) return;
+    if((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === 'z'){ ev.preventDefault(); undo(); return; }
+    if((ev.ctrlKey || ev.metaKey) && (ev.key.toLowerCase() === 'y' || (ev.shiftKey && ev.key.toLowerCase()==='z'))){ ev.preventDefault(); redo(); return; }
+    if((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === 'c'){ ev.preventDefault(); copySelection(); return; }
+    if((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === 'v'){ ev.preventDefault(); pasteClipboard(); return; }
+    if((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === 'x'){ ev.preventDefault(); cutSelection(); return; }
+
+    if(ev.key === "ArrowUp"){ sel.r = Math.max(0, sel.r-1); selectionRect = null; updateSelection(); ev.preventDefault(); }
+    else if(ev.key === "ArrowDown"){ sel.r = Math.min(model.maxRow-1, sel.r+1); selectionRect = null; updateSelection(); ev.preventDefault(); }
+    else if(ev.key === "ArrowLeft"){ sel.c = Math.max(0, sel.c-1); selectionRect = null; updateSelection(); ev.preventDefault(); }
+    else if(ev.key === "ArrowRight"){ sel.c = Math.min(model.maxCol-1, sel.c+1); selectionRect = null; updateSelection(); ev.preventDefault(); }
+    else if(ev.key === "Enter"){ enterEdit(sel.r, sel.c); ev.preventDefault(); }
+    else if(ev.key === "Tab"){ sel.c = Math.max(0, sel.c + (ev.shiftKey ? -1 : 1)); selectionRect=null; updateSelection(); ev.preventDefault(); }
+    else if(ev.key === "Delete" || ev.key === "Backspace"){ pushHistory(); if(selectionRect){ for(let r=selectionRect.r1;r<=selectionRect.r2;r++){ for(let c=selectionRect.c1;c<=selectionRect.c2;c++){ model.cells.delete(coordKey(r,c)); } } selectionRect=null; } else model.cells.delete(coordKey(sel.r,sel.c)); saveLocal(); renderCells(); ev.preventDefault(); }
+  });
+
+  // Grid scroll & size events
+  gridViewport.addEventListener("scroll", debounce(onGridScroll, 20));
+  window.addEventListener("resize", ()=> { ensureSize(); renderHeaders(); renderCells(); });
+
+  // Mouse-driven multi-selection (drag)
+  function getCellFromClientXY(clientX, clientY){
+    const rect = cellsContainer.getBoundingClientRect();
+    const x = clientX - rect.left + gridViewport.scrollLeft;
+    const y = clientY - rect.top + gridViewport.scrollTop;
+    const c = Math.floor(x / CELL_W);
+    const r = Math.floor(y / CELL_H);
+    return { r: Math.max(0, Math.min(MAX_ROWS-1, r)), c: Math.max(0, Math.min(MAX_COLS-1, c)) };
+  }
+
+  function onMouseDown(e){
+    if(e.button !== 0) return;
+    const cellEl = e.target.closest(".cell");
+    if(!cellEl) return;
+    e.preventDefault();
+    const startR = parseInt(cellEl.dataset.r,10);
+    const startC = parseInt(cellEl.dataset.c,10);
+    selectionStart = { r: startR, c: startC };
+    isSelecting = true;
+    setSelectionRect(startR, startC, startR, startC);
+    window.addEventListener("mousemove", onMouseMove);
+    window.addEventListener("mouseup", onMouseUp);
+  }
+
+  function onMouseMove(e){
+    if(!isSelecting) return;
+    const pos = getCellFromClientXY(e.clientX, e.clientY);
+    setSelectionRect(selectionStart.r, selectionStart.c, pos.r, pos.c);
+  }
+
+  function onMouseUp(e){
+    if(!isSelecting) return;
+    isSelecting = false;
+    window.removeEventListener("mousemove", onMouseMove);
+    window.removeEventListener("mouseup", onMouseUp);
+    const pos = getCellFromClientXY(e.clientX, e.clientY);
+    setSelectionRect(selectionStart.r, selectionStart.c, pos.r, pos.c);
+    if(selectionRect && selectionRect.r1 === selectionRect.r2 && selectionRect.c1 === selectionRect.c2){
+      sel.r = selectionRect.r1; sel.c = selectionRect.c1; selectionRect = null;
+      updateSelection();
+    }
+    drawSelectionRect();
+  }
+
+  gridViewport.addEventListener("mousedown", onMouseDown);
+
+  // Init
+  function init(){
+    loadLocal();
+    ensureSize();
+    renderHeaders();
+    renderCells();
+    sel = { r:0, c:0, editing:false };
+    selectionRect = null;
+    updateSelection();
+    setInterval(saveLocal, 5000);
+    updateUndoButtons();
+  }
+
+  function debounce(fn,ms){ let t; return (...a)=>{ clearTimeout(t); t=setTimeout(()=>fn(...a), ms); }; }
+
+  ensureSize();
+  init();
+
+  // expose minimal API for debug if needed
+  window.MINISheets = { model, saveLocal, loadLocal, undo, redo };
+
+})();
+</script>
+</body>
+</html>
